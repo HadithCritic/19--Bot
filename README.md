@@ -69,33 +69,82 @@ since restarting cannot fix those.
 python main.py
 ```
 
-**Docker:**
+### Docker
+
+The image is multi-stage: dependencies are built in a stage that carries a C
+toolchain, and only the resulting virtualenv is copied into the runtime image.
+No compiler ships. There are no additional services to run, because all state
+is local SQLite.
+
+**With compose (recommended):**
 
 ```bash
 docker compose up -d --build
 ```
 
-The image builds for both linux/amd64 and linux/arm64, so the same Dockerfile
-works on an Intel server, an Apple Silicon Mac and a Raspberry Pi.
+**Plain docker:**
 
-| Aspect | Behaviour |
-|---|---|
-| User | Unprivileged `botuser`, never root |
-| Persistence | `databases/`, `logs/` and `archives/` are all bind-mounted |
-| Health | From the heartbeat the bot writes every 60 seconds, tolerance 180 |
-| Shutdown | `init: true` plus SIGTERM handling, so the database closes cleanly |
-| Python | Read from `.python-version` via a build arg |
+```bash
+docker build -t 19bot:latest .
+```
 
-Check status with:
+```bash
+docker run -d --name 19bot --restart unless-stopped --init --env-file .env -v "$(pwd)/databases:/app/databases" -v "$(pwd)/logs:/app/logs" -v "$(pwd)/archives:/app/archives" 19bot:latest
+```
+
+**Status and logs:**
 
 ```bash
 docker compose ps
 ```
 
-The container reports `healthy` once the bot's event loop has written
-`logs/heartbeat`. That file is the liveness signal rather than log freshness: a
-quiet bot legitimately writes no logs for hours, which previously reported
-unhealthy and could drive a restart loop.
+```bash
+docker compose logs -f bot
+```
+
+```bash
+docker compose down
+```
+
+| Aspect | Behaviour |
+|---|---|
+| Base | `python:3.13-slim`, built for linux/amd64 and linux/arm64 |
+| Size | ~262 MB |
+| User | `botuser`, uid 10001, never root |
+| Ports | None. The bot is an outbound gateway client and listens for nothing |
+| Services | None. SQLite only, so no database or cache container |
+| Persistence | `databases/`, `logs/` and `archives/` are bind-mounted |
+| Health | From `logs/heartbeat`, written every 60s; tolerance 180s |
+| Shutdown | `init: true` plus SIGTERM handling, so the database closes cleanly |
+| Config | Entirely from the environment via `--env-file .env`; nothing baked in |
+
+`docker compose ps` shows `health: starting` for the first minute, then
+`healthy` once the event loop has written its first heartbeat. Heartbeat
+freshness is the liveness signal rather than log activity: a quiet bot
+legitimately writes no logs for hours, which previously reported unhealthy and
+could drive a restart loop.
+
+Startup takes roughly a minute to reach "Logged in" on a large guild, because
+the members intent chunks the member list before `on_ready`.
+
+#### Bind mounts on native Linux
+
+The container runs as uid 10001 and bind mounts keep host ownership, so on
+native Linux the mounted directories must be writable by that uid. Either chown
+them once:
+
+```bash
+sudo chown -R 10001:10001 databases logs archives
+```
+
+Or run the container as yourself:
+
+```bash
+DOCKER_USER="$(id -u):$(id -g)" docker compose up -d
+```
+
+Docker Desktop on Windows and macOS maps ownership permissively and needs
+neither.
 
 **macOS and Linux, with auto-restart:**
 

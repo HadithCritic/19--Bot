@@ -22,6 +22,18 @@ _BACKUP_COUNT = 5
 
 _configured = False
 
+# discord.py warns at startup that PyNaCl and davey are missing, meaning voice
+# is unsupported. That is deliberate: the voice cog was removed and the deps
+# dropped, so the warning describes an intended state and would otherwise
+# appear on every start as if something were wrong.
+_EXPECTED_STARTUP_WARNINGS = ("voice will NOT be supported",)
+
+
+class _DropExpectedVoiceWarnings(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not any(text in message for text in _EXPECTED_STARTUP_WARNINGS)
+
 
 def setup_logging(*, log_dir: str = "logs", level: str = "INFO") -> None:
     """Configure the root logger. Safe to call more than once."""
@@ -61,6 +73,7 @@ def setup_logging(*, log_dir: str = "logs", level: str = "INFO") -> None:
 
     # discord.py is chatty at INFO on every gateway event.
     logging.getLogger("discord").setLevel(logging.WARNING)
+    logging.getLogger("discord.client").addFilter(_DropExpectedVoiceWarnings())
     logging.getLogger("discord.http").setLevel(logging.WARNING)
     logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 

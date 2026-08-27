@@ -156,3 +156,101 @@ def test_launchers_agree_on_the_exit_codes():
 def test_shell_launcher_has_no_crlf():
     """CRLF in a shell script fails with 'bad interpreter' on Linux."""
     assert b"\r\n" not in (ROOT / "start_bot.sh").read_bytes()
+
+
+# --- Multi-stage image ---
+
+
+def dockerfile() -> str:
+    return read("Dockerfile")
+
+
+def runtime_stage() -> str:
+    """Everything after the final FROM, i.e. what actually ships."""
+    return dockerfile().rsplit("FROM ", 1)[1]
+
+
+def test_image_is_multi_stage():
+    text = dockerfile()
+    assert "AS builder" in text
+    assert "AS runtime" in text
+
+
+def test_build_toolchain_is_confined_to_the_builder():
+    """gcc in the runtime image is attack surface and dead weight."""
+    assert "build-essential" in dockerfile()
+    assert "build-essential" not in runtime_stage()
+
+
+def test_runtime_stage_copies_the_prebuilt_venv():
+    assert "COPY --from=builder /opt/venv /opt/venv" in dockerfile()
+
+
+def test_both_stages_share_one_version_arg():
+    text = dockerfile()
+    assert text.count("FROM python:${PYTHON_VERSION}-slim") == 2
+
+
+def test_builder_verifies_dependencies_install():
+    """Better to fail the build than to discover it at deploy time."""
+    assert "import discord, aiohttp, aiosqlite, feedparser, dotenv, zoneinfo" in dockerfile()
+
+
+def test_image_declares_no_ports():
+    """The bot is an outbound gateway client and listens for nothing."""
+    assert "EXPOSE" not in dockerfile()
+
+
+def test_image_carries_provenance_labels():
+    assert "org.opencontainers.image.source" in dockerfile()
+
+
+# --- Build context ---
+
+
+def test_dockerignore_denies_by_default():
+    """An exclusion list silently ships whatever is added later."""
+    lines = [
+        line.strip()
+        for line in read(".dockerignore").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    assert lines[0] == "*"
+
+
+def test_dockerignore_allows_exactly_what_the_image_needs():
+    text = read(".dockerignore")
+    for needed in ("!requirements.txt", "!main.py", "!core/", "!cogs/", "!resources/"):
+        assert needed in text, needed
+
+
+def test_dockerignore_reexcludes_secrets_and_state():
+    text = read(".dockerignore")
+    for excluded in ("**/.env", "databases/", "archives/", "logs/"):
+        assert excluded in text, excluded
+
+
+def test_no_test_or_dev_files_are_allowed_into_the_context():
+    """tests/, scripts/ and site/ are not needed at runtime."""
+    text = read(".dockerignore")
+    for name in ("!tests", "!scripts", "!site", "!.git"):
+        assert name not in text, name
+
+
+# --- Configuration comes from the environment ---
+
+
+def test_compose_reads_the_env_file():
+    compose = yaml.safe_load(read("docker-compose.yml"))
+    assert ".env" in compose["services"]["bot"]["env_file"]
+
+
+def test_no_token_is_baked_into_the_image_definition():
+    for name in ("Dockerfile", "docker-compose.yml"):
+        text = read(name)
+        assert "DISCORD_TOKEN=" not in text, name
+
+
+def test_compose_allows_overriding_the_run_user():
+    """Bind mounts keep host ownership, so native Linux needs this."""
+    assert "${DOCKER_USER:-10001:10001}" in read("docker-compose.yml")

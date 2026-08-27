@@ -1,37 +1,26 @@
-# Secrets
-.env
-*.env
-!.env.example
+# Deny by default, then allow only what the image actually needs. An exclusion
+# list silently ships whatever gets added later; this cannot.
+*
 
-# Live state: mounted at runtime, never baked into the image
+# --- Build inputs -----------------------------------------------------------
+!requirements.txt
+!main.py
+!core/
+!cogs/
+!resources/
+
+# --- Re-exclude anything that slipped in under the allowed directories ------
+# .env is never needed: configuration arrives as environment variables.
+**/.env
+**/*.env
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store
+
+# Live state is bind-mounted at runtime and must never be baked into a layer:
+# databases/ and archives/ hold member data, and an image is far easier to
+# leak than a repository.
 databases/
+archives/
 logs/
 backups/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Virtual environment
-.venv/
-venv/
-
-# Development
-.git/
-.github/
-.vscode/
-.claude/
-tests/
-scratch/
-src/
-chroma_data/
-start_bot.bat
-README.md
-
-# Channel archives contain member data
-archives/

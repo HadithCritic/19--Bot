@@ -17,6 +17,14 @@ services:
     # instead of the process being killed outright.
     init: true
 
+    # The image runs as uid 10001. Bind mounts keep host ownership, so on native
+    # Linux the mounted directories must be writable by that uid. Either chown
+    # them once, or run as yourself:
+    #   DOCKER_USER="$(id -u):$(id -g)" docker compose up -d
+    # Docker Desktop on Windows and macOS maps ownership permissively and needs
+    # neither.
+    user: "${DOCKER_USER:-10001:10001}"
+
     environment:
       # The bot formats times in EST via zoneinfo regardless, but matching the
       # container clock keeps log timestamps readable.
