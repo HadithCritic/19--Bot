@@ -150,15 +150,14 @@ class Security(commands.Cog):
         return True
 
     async def flag_suspicious_account(self, member: discord.Member) -> bool:
-        """Flag and restrict an account created shortly before joining."""
+        """Flag and log an account created shortly before joining."""
         max_age_hours = CONFIG.suspicious_account_max_age_hours
         age = discord.utils.utcnow() - member.created_at
         age_hours = age.total_seconds() / 3600
         if age_hours >= max_age_hours:
             return False
 
-        role_assigned = await self._assign_unverified_role(member)
-        notified = await self._notify_staff_of_suspicious(member, age_hours, role_assigned)
+        notified = await self._notify_staff_of_suspicious(member, age_hours)
 
         # joined_at is Optional on Member; the old code dereferenced it blindly
         # and the resulting AttributeError was swallowed, losing the record.
@@ -169,7 +168,7 @@ class Security(commands.Cog):
                    (user_id, guild_id, username, display_name,
                     account_created_at, joined_at, flagged_at,
                     unverified_role_assigned, staff_notified)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
                ON CONFLICT(user_id) DO UPDATE SET
                    guild_id                 = excluded.guild_id,
                    username                 = excluded.username,
@@ -177,7 +176,7 @@ class Security(commands.Cog):
                    account_created_at       = excluded.account_created_at,
                    joined_at                = excluded.joined_at,
                    flagged_at               = excluded.flagged_at,
-                   unverified_role_assigned = excluded.unverified_role_assigned,
+                   unverified_role_assigned = 0,
                    staff_notified           = excluded.staff_notified""",
             (
                 member.id,
@@ -187,16 +186,14 @@ class Security(commands.Cog):
                 member.created_at.isoformat(),
                 joined_at.isoformat(),
                 discord.utils.utcnow().isoformat(),
-                int(role_assigned),
                 int(notified),
             ),
         )
         logger.warning(
-            "Flagged suspicious account %s (%s), age %.1fh, role assigned=%s",
+            "Flagged suspicious account %s (%s), age %.1fh",
             member,
             member.id,
             age_hours,
-            role_assigned,
         )
         return True
 
@@ -248,26 +245,8 @@ class Security(commands.Cog):
 
     # --- Helpers ---
 
-    async def _assign_unverified_role(self, member: discord.Member) -> bool:
-        role = member.guild.get_role(CONFIG.unverified_role_id)
-        if role is None:
-            logger.error(
-                "Unverified role %s not found in guild %s",
-                CONFIG.unverified_role_id,
-                member.guild.id,
-            )
-            return False
-        try:
-            await member.add_roles(role, reason="Account created less than 24h before joining")
-            return True
-        except discord.Forbidden:
-            logger.error("Missing Manage Roles permission, cannot restrict %s", member.id)
-        except discord.HTTPException as exc:
-            logger.error("Failed to add unverified role to %s: %s", member.id, exc)
-        return False
-
     async def _notify_staff_of_suspicious(
-        self, member: discord.Member, age_hours: float, role_assigned: bool
+        self, member: discord.Member, age_hours: float
     ) -> bool:
         embed = discord.Embed(
             title="🚨 Suspicious Account Detected",
@@ -277,12 +256,8 @@ class Security(commands.Cog):
         embed.add_field(name="User", value=f"{member.mention} (`{member.id}`)", inline=True)
         embed.add_field(name="Account Age", value=f"{age_hours:.1f} hours", inline=True)
         embed.add_field(
-            name="Action Taken",
-            value=(
-                f"Assigned <@&{CONFIG.unverified_role_id}>"
-                if role_assigned
-                else "⚠️ Failed to assign the Unverified role, check bot permissions"
-            ),
+            name="Note",
+            value="Account created less than 24h before joining.",
             inline=False,
         )
         return await self._log_to_staff(member.guild, embed=embed)

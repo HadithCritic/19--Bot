@@ -50,7 +50,6 @@ _REQUIRED_IDS = (
     "admin_role_id",
     "moderator_role_id",
     "new_member_role_id",
-    "unverified_role_id",
 )
 
 
