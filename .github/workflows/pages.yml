@@ -3,9 +3,6 @@ name: Publish legal site
 # Serves the Terms of Service and Privacy Policy as public pages, which Discord
 # app verification requires. Discord's validator rejects any URL it cannot
 # fetch, so these must be reachable without authentication.
-#
-# GitHub Pages on the free plan only serves PUBLIC repositories. If this repo
-# stays private, use one of the alternatives in docs/VERIFICATION.md instead.
 
 on:
   push:
@@ -31,9 +28,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
@@ -41,11 +38,19 @@ jobs:
       - name: Build the site from the markdown
         run: python scripts/build_legal_site.py
 
-      - uses: actions/configure-pages@v5
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+        with:
+          # Turns Pages on if it is not already enabled, instead of failing with
+          # "Get Pages site failed". Needs the pages: write permission above.
+          enablement: true
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+          # site/.nojekyll is a dotfile, and this action excludes hidden files
+          # by default from v4 onwards.
+          include-hidden-files: true
 
   deploy:
     needs: build
@@ -55,4 +60,22 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+
+      # The entire point is that Discord can fetch these, so prove it.
+      - name: Verify both policy pages are publicly reachable
+        run: |
+          base="${{ steps.deployment.outputs.page_url }}"
+          fail=0
+          for page in terms.html privacy.html; do
+            url="${base%/}/$page"
+            code=$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 5 \
+                        --retry-all-errors "$url")
+            if [ "$code" = "200" ]; then
+              echo "OK   $code  $url"
+            else
+              echo "::error::$url returned HTTP $code; Discord will reject this URL"
+              fail=1
+            fi
+          done
+          exit $fail

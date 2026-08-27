@@ -9,9 +9,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -34,14 +34,18 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Full history: the scan checks past commits, not just the current tree.
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Fail if a .env or database file is tracked
-        run: |
-          if git ls-files | grep -E '(^|/)\.env$|\.db$'; then
-            echo "::error::Secrets or database files are tracked in git"
-            exit 1
-          fi
-          echo "No tracked secrets or database files"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # The same script used before publishing, rather than a separate ad-hoc
+      # grep that could drift from it. Covers tracked paths, file contents, and
+      # history. This repository is public, so a regression here is immediate
+      # exposure of member data.
+      - name: Pre-publication scan
+        run: python scripts/preflight_public.py
