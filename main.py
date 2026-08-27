@@ -36,6 +36,15 @@ logger = logging.getLogger("bot")
 # tolerates three times this before reporting unhealthy.
 _HEARTBEAT_SECONDS = 60
 
+# Upper bound on how long discord.py's own shutdown may take before we stop
+# waiting on it. Without this the process can sit until the container runtime
+# sends SIGKILL, which loses the clean database close entirely.
+_CLIENT_CLOSE_TIMEOUT = 10.0
+
+# Hard ceiling on the whole shutdown, kept under the compose stop_grace_period
+# so the process exits on its own rather than being killed.
+_SHUTDOWN_TIMEOUT = 20.0
+
 EXTENSIONS = (
     "cogs.security",
     "cogs.moderation",
@@ -141,8 +150,23 @@ class SubmissionBot(commands.Bot):
             )
 
     async def close(self) -> None:
+        """Shut down in bounded time, closing our own resources regardless.
+
+        discord.py's close can block on draining its HTTP session, so it is
+        given a deadline. The database is closed afterwards either way: it is
+        ours, and leaving it open on the way out is worse than a noisy log.
+        """
         self.heartbeat.cancel()
-        await super().close()
+        try:
+            await asyncio.wait_for(super().close(), timeout=_CLIENT_CLOSE_TIMEOUT)
+        except TimeoutError:
+            logger.warning(
+                "Discord client did not close within %.0fs, continuing shutdown",
+                _CLIENT_CLOSE_TIMEOUT,
+            )
+        except Exception:
+            logger.exception("Error while closing the Discord client")
+
         await self.db.close()
         logger.info("Database connection closed")
 
@@ -227,22 +251,20 @@ class SubmissionBot(commands.Bot):
         await respond_error(interaction, "An unexpected error occurred. Staff have been notified.")
 
 
-def _install_shutdown_handlers(bot: SubmissionBot) -> None:
-    """Close the bot cleanly on SIGTERM as well as Ctrl-C.
+def _install_shutdown_handlers(stop: asyncio.Event) -> None:
+    """Set an event on SIGTERM or Ctrl-C. `main` owns the actual shutdown.
 
     `docker stop` sends SIGTERM, whose default action ends the process at once,
-    skipping the shutdown path that closes the database. Signal handlers are not
-    available on the Windows event loop, which is why this is best-effort.
+    skipping the path that closes the database. The handler only signals: it
+    must not start a shutdown of its own, or it races the one in main and both
+    can block before either logs anything. Signal handlers are unavailable on
+    the Windows event loop, so this is best-effort there.
     """
     loop = asyncio.get_running_loop()
-    # Held so the shutdown task is not garbage collected before it completes.
-    pending: set[asyncio.Task] = set()
 
     def request_shutdown(signal_name: str) -> None:
         logger.info("Received %s, shutting down", signal_name)
-        task = loop.create_task(bot.close())
-        pending.add(task)
-        task.add_done_callback(pending.discard)
+        stop.set()
 
     for name in ("SIGTERM", "SIGINT"):
         sig = getattr(signal, name, None)
@@ -262,23 +284,53 @@ async def main() -> int:
         return 2
 
     bot = SubmissionBot()
-    _install_shutdown_handlers(bot)
+    stop = asyncio.Event()
+    _install_shutdown_handlers(stop)
+
+    # start() rather than run() so logging is already configured and the process
+    # exits with a status code instead of waiting on stdin. Racing it against the
+    # stop event means shutdown never depends on start() returning by itself.
+    runner = asyncio.create_task(bot.start(CONFIG.token), name="bot-run")
+    waiter = asyncio.create_task(stop.wait(), name="shutdown-signal")
+    status = 0
+
     try:
-        # start() rather than run() so logging is already configured and the
-        # process exits with a status code instead of waiting on stdin.
-        await bot.start(CONFIG.token)
+        done, _ = await asyncio.wait({runner, waiter}, return_when=asyncio.FIRST_COMPLETED)
+
+        if runner in done:
+            # Surface whatever ended the run: a clean stop or a fatal error.
+            runner.result()
+        else:
+            try:
+                await asyncio.wait_for(bot.close(), timeout=_SHUTDOWN_TIMEOUT)
+            except TimeoutError:
+                logger.warning(
+                    "Shutdown did not finish within %.0fs, exiting anyway",
+                    _SHUTDOWN_TIMEOUT,
+                )
     except discord.LoginFailure:
         logger.critical("Discord rejected the token. Rotate it and update .env")
-        return 2
+        status = 2
     except DatabaseError as exc:
         logger.critical("Database unavailable: %s", exc)
-        return 3
+        status = 3
     except (KeyboardInterrupt, asyncio.CancelledError):
-        logger.info("Shutdown requested")
+        logger.info("Interrupted")
+    except Exception:
+        logger.exception("Fatal error")
+        status = 1
     finally:
-        if not bot.is_closed():
-            await bot.close()
-    return 0
+        # Nothing here may block: the process must reach exit even if the
+        # Discord client refuses to close.
+        for task in (waiter, runner):
+            task.cancel()
+        await asyncio.gather(waiter, runner, return_exceptions=True)
+        # Our own handle, closed regardless of what the client did.
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(bot.db.close(), timeout=5)
+        logger.info("Shutdown complete")
+
+    return status
 
 
 if __name__ == "__main__":

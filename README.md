@@ -73,8 +73,12 @@ python main.py
 
 The image is multi-stage: dependencies are built in a stage that carries a C
 toolchain, and only the resulting virtualenv is copied into the runtime image.
-No compiler ships. There are no additional services to run, because all state
-is local SQLite.
+No compiler and no package manager ship. There are no additional services to
+run, because all state is local SQLite.
+
+It scans clean: **0 critical, 0 high, 0 medium, 0 low** on `docker scout`, down
+from 84 findings. See [`docs/SECURITY.md`](docs/SECURITY.md) for what changed
+and how to keep it that way.
 
 **With compose (recommended):**
 
@@ -108,14 +112,15 @@ docker compose down
 
 | Aspect | Behaviour |
 |---|---|
-| Base | `python:3.13-slim`, built for linux/amd64 and linux/arm64 |
-| Size | ~262 MB |
+| Base | `python:3.13-alpine`, built for linux/amd64 and linux/arm64 |
+| Size | ~151 MB, 54 packages |
+| Vulnerabilities | 0 critical, 0 high, 0 medium, 0 low |
 | User | `botuser`, uid 10001, never root |
 | Ports | None. The bot is an outbound gateway client and listens for nothing |
 | Services | None. SQLite only, so no database or cache container |
 | Persistence | `databases/`, `logs/` and `archives/` are bind-mounted |
 | Health | From `logs/heartbeat`, written every 60s; tolerance 180s |
-| Shutdown | `init: true` plus SIGTERM handling, so the database closes cleanly |
+| Shutdown | `init: true` plus SIGTERM handling; `docker stop` takes ~1s and exits 0 |
 | Config | Entirely from the environment via `--env-file .env`; nothing baked in |
 
 `docker compose ps` shows `health: starting` for the first minute, then
@@ -126,6 +131,17 @@ could drive a restart loop.
 
 Startup takes roughly a minute to reach "Logged in" on a large guild, because
 the members intent chunks the member list before `on_ready`.
+
+#### Git Bash on Windows
+
+`$(pwd)` in the `docker run` command above works in a POSIX shell. Under Git
+Bash on Windows, MSYS rewrites the path and Docker silently mounts a different,
+empty directory instead, so the bot appears to start with no data. Either use
+`docker compose`, which resolves relative paths itself, or prefix the command:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run ...
+```
 
 #### Bind mounts on native Linux
 
@@ -465,7 +481,7 @@ kept as CRLF because cmd.exe requires it. Without that, a file committed from
 Windows carries CRLF and a shell script fails inside the Linux container with
 "bad interpreter".
 
-231 tests, none of which need a Discord connection. Coverage is concentrated on
+252 tests, none of which need a Discord connection. Coverage is concentrated on
 the logic where a regression is most costly: configuration validation, database
 migrations against realistic legacy schemas, permission resolution, the
 member-join ordering, feed diffing and backoff, and archive path safety.
@@ -483,6 +499,8 @@ hosted and reachable from the app itself, which `/privacy` provides.
 - [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — status of all six criteria,
   Developer Portal steps, the minimum permission set, and privileged intent
   justifications
+- [`docs/SECURITY.md`](docs/SECURITY.md) — container vulnerability baseline,
+  dependency floors, and the rescan command
 
 Discord fetches both URLs and rejects any it cannot reach, so the markdown is
 rendered to real web pages in `site/` and served by GitHub Pages:
@@ -549,7 +567,7 @@ reachable history for anything sensitive. Exit code 0 means safe. See
 │   └── archive.py            # Owner-only channel export
 │
 ├── .python-version           # The single source of the supported Python version
-├── docs/                     # Terms, privacy policy, verification checklist
+├── docs/                     # Terms, privacy, verification, security baseline
 ├── site/                     # Generated public policy pages (GitHub Pages)
 ├── scripts/
 │   ├── check_feeds.py        # Feed health check

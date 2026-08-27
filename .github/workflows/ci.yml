@@ -49,3 +49,33 @@ jobs:
       # exposure of member data.
       - name: Pre-publication scan
         run: python scripts/preflight_public.py
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Catches a broken Dockerfile in review rather than at deploy time. The
+      # build itself asserts every dependency imports and that the runtime venv
+      # has no package manager left in it.
+      - name: Build the image
+        run: docker build -t 19bot:ci .
+
+      - name: Container starts and fails fast without a token
+        run: |
+          set +e
+          output=$(docker run --rm 19bot:ci 2>&1)
+          code=$?
+          echo "$output"
+          if [ "$code" -ne 2 ]; then
+            echo "::error::expected exit 2 for missing configuration, got $code"
+            exit 1
+          fi
+          echo "$output" | grep -q "DISCORD_TOKEN is not set" || {
+            echo "::error::missing the expected configuration error"; exit 1; }
+
+      - name: Runs as an unprivileged user
+        run: |
+          uid=$(docker run --rm 19bot:ci python -c "import os; print(os.getuid())")
+          [ "$uid" != "0" ] || { echo "::error::container runs as root"; exit 1; }
+          echo "uid $uid"

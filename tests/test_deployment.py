@@ -177,9 +177,11 @@ def test_image_is_multi_stage():
 
 
 def test_build_toolchain_is_confined_to_the_builder():
-    """gcc in the runtime image is attack surface and dead weight."""
-    assert "build-essential" in dockerfile()
-    assert "build-essential" not in runtime_stage()
+    """A compiler in the runtime image is attack surface and dead weight."""
+    text = dockerfile()
+    toolchain = "build-base" if "alpine" in text else "build-essential"
+    assert toolchain in text
+    assert toolchain not in runtime_stage()
 
 
 def test_runtime_stage_copies_the_prebuilt_venv():
@@ -187,8 +189,13 @@ def test_runtime_stage_copies_the_prebuilt_venv():
 
 
 def test_both_stages_share_one_version_arg():
-    text = dockerfile()
-    assert text.count("FROM python:${PYTHON_VERSION}-slim") == 2
+    """Builder and runtime must never drift onto different interpreters."""
+    import re
+
+    froms = re.findall(r"^FROM (\S+)", dockerfile(), re.MULTILINE)
+    assert len(froms) == 2, froms
+    assert froms[0] == froms[1], froms
+    assert "${PYTHON_VERSION}" in froms[0]
 
 
 def test_builder_verifies_dependencies_install():
@@ -254,3 +261,75 @@ def test_no_token_is_baked_into_the_image_definition():
 def test_compose_allows_overriding_the_run_user():
     """Bind mounts keep host ownership, so native Linux needs this."""
     assert "${DOCKER_USER:-10001:10001}" in read("docker-compose.yml")
+
+
+# --- Supply chain ---
+
+
+def test_runtime_image_has_no_package_manager():
+    """pip vendors a flagged msgpack and ensurepip bundles a flagged setuptools.
+
+    Neither is importable by the app, so both are removed. This asserts the
+    removal is still there, because it is worth several HIGH findings.
+    """
+    text = dockerfile()
+    assert "pip uninstall" in text
+    assert "ensurepip" in text
+    assert "site-packages/pip" in text
+
+
+def test_os_packages_are_patched_at_build_time():
+    """The published base image lags its own security updates."""
+    text = dockerfile()
+    assert ("apk upgrade" in text) or ("apt-get upgrade" in text)
+
+
+def test_dependency_pins_clear_the_known_advisories():
+    """Floors chosen from the scan; see docs/SECURITY.md before lowering."""
+    requirements = read("requirements.txt")
+    minimums = {
+        "aiohttp": (3, 14, 3),
+        "python-dotenv": (1, 2, 2),
+    }
+    for line in requirements.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "==" not in line:
+            continue
+        name, version = line.split("==", 1)
+        if name in minimums:
+            parts = tuple(int(p) for p in version.split(".")[:3])
+            assert parts >= minimums[name], f"{name} {version} is below the CVE floor"
+
+
+# --- Shutdown has a single owner ---
+
+
+def test_signal_handler_only_signals():
+    """Two concurrent shutdowns deadlocked and the container was SIGKILLed."""
+    main = read("main.py")
+    handler = main.split("def _install_shutdown_handlers")[1].split("\nasync def main")[0]
+    assert "stop.set()" in handler
+    assert "create_task" not in handler, "the handler must not start a shutdown itself"
+
+
+def test_shutdown_is_bounded():
+    main = read("main.py")
+    assert "_SHUTDOWN_TIMEOUT" in main
+    assert "_CLIENT_CLOSE_TIMEOUT" in main
+
+
+def test_shutdown_ceiling_is_under_the_compose_grace_period():
+    """Exceeding it means the runtime kills the process instead."""
+    import re
+
+    ceiling = float(re.search(r"_SHUTDOWN_TIMEOUT = ([\d.]+)", read("main.py")).group(1))
+    compose = yaml.safe_load(read("docker-compose.yml"))
+    grace = compose["services"]["bot"]["stop_grace_period"]
+    seconds = float(str(grace).rstrip("s"))
+    assert ceiling < seconds, f"ceiling {ceiling}s must be under the {seconds}s grace period"
+
+
+def test_database_is_closed_even_if_the_client_will_not():
+    main = read("main.py")
+    finally_block = main.rsplit("finally:", 1)[1]
+    assert "bot.db.close()" in finally_block
