@@ -212,8 +212,8 @@ async def test_a_guild_administrator_is_not_the_owner():
 
 
 def test_single_channel_target_folder():
+
     from cogs.archive import ChannelArchiver
-    import discord
 
     dest = Path("archives/123/general-456")
     archiver = ChannelArchiver(
@@ -230,8 +230,8 @@ def test_single_channel_target_folder():
 
 
 def test_server_archive_target_folders():
+
     from cogs.archive import ChannelArchiver
-    import discord
 
     dest = Path("archives/123/server-myserver-123")
     archiver = ChannelArchiver(
@@ -246,4 +246,3 @@ def test_server_archive_target_folders():
     cat = SimpleNamespace(name="General Category")
     channel = SimpleNamespace(name="welcome", id=789, category=cat)
     assert archiver._target_folder(channel) == dest / "General_Category" / "welcome-789"  # type: ignore[arg-type]
-

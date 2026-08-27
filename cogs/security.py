@@ -245,9 +245,7 @@ class Security(commands.Cog):
 
     # --- Helpers ---
 
-    async def _notify_staff_of_suspicious(
-        self, member: discord.Member, age_hours: float
-    ) -> bool:
+    async def _notify_staff_of_suspicious(self, member: discord.Member, age_hours: float) -> bool:
         embed = discord.Embed(
             title="🚨 Suspicious Account Detected",
             color=discord.Color.red(),

@@ -377,7 +377,9 @@ class Archive(commands.Cog):
             return
 
         if guild.me is None:
-            await respond_error(interaction, "I cannot resolve my own member object in this server.")
+            await respond_error(
+                interaction, "I cannot resolve my own member object in this server."
+            )
             return
 
         dm_message = await self._open_progress_dm(interaction.user, guild)
@@ -586,7 +588,11 @@ class Archive(commands.Cog):
 
     async def _collect_targets(
         self,
-        channel: discord.TextChannel | discord.ForumChannel | discord.VoiceChannel | discord.StageChannel | discord.Thread,
+        channel: discord.TextChannel
+        | discord.ForumChannel
+        | discord.VoiceChannel
+        | discord.StageChannel
+        | discord.Thread,
         include_threads: bool,
     ) -> list[discord.abc.Messageable]:
         """The channel itself, plus its threads when asked.
@@ -665,7 +671,9 @@ class Archive(commands.Cog):
         all_targets: list[discord.abc.Messageable] = []
         for ch in channels:
             perms = ch.permissions_for(me)
-            if not perms.view_channel or (not perms.read_message_history and not isinstance(ch, discord.ForumChannel)):
+            if not perms.view_channel or (
+                not perms.read_message_history and not isinstance(ch, discord.ForumChannel)
+            ):
                 logger.info("Skipping %s (%s): missing read permissions", ch.name, ch.id)
                 continue
             ch_targets = await self._collect_targets(ch, include_threads)
@@ -785,7 +793,11 @@ class Archive(commands.Cog):
         self, user: discord.User | discord.Member, target: discord.abc.Messageable | discord.Guild
     ) -> discord.Message | None:
         is_server = isinstance(target, discord.Guild)
-        target_name = f"server **{target.name}**" if is_server else f"**#{getattr(target, 'name', 'channel')}**"
+        target_name = (
+            f"server **{target.name}**"
+            if is_server
+            else f"**#{getattr(target, 'name', 'channel')}**"
+        )
         embed = discord.Embed(
             title="📦 Archive queued",
             description=f"Preparing to archive {target_name}...",
@@ -840,7 +852,11 @@ class _ProgressReporter:
             await self._message.edit(embed=embed)
         with contextlib.suppress(discord.HTTPException):
             # A separate message so the completion actually pings the DM.
-            name_str = f"server **{self._target.name}**" if isinstance(self._target, discord.Guild) else f"**#{getattr(self._target, 'name', 'channel')}**"
+            name_str = (
+                f"server **{self._target.name}**"
+                if isinstance(self._target, discord.Guild)
+                else f"**#{getattr(self._target, 'name', 'channel')}**"
+            )
             await self._message.reply(
                 f"✅ Archive of {name_str} complete: "
                 f"{self._stats.messages:,} messages, "
@@ -886,7 +902,9 @@ class _ProgressReporter:
             inline=True,
         )
         if self._stats.channels_total > 1:
-            cur = f" ({self._stats.current_channel_name})" if self._stats.current_channel_name else ""
+            cur = (
+                f" ({self._stats.current_channel_name})" if self._stats.current_channel_name else ""
+            )
             embed.add_field(
                 name="Channels",
                 value=f"{self._stats.channels_done}/{self._stats.channels_total}{cur}",
