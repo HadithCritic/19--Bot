@@ -433,10 +433,15 @@ class Archive(commands.Cog):
                 seen.add(thread.id)
 
         # Archived threads are not cached and must be paged from the API.
-        for archived in (
-            channel.archived_threads(limit=None, private=False),
-            channel.archived_threads(limit=None, private=True, joined=False),
-        ):
+        if isinstance(channel, discord.ForumChannel):
+            archived_iters = (channel.archived_threads(limit=None),)
+        else:
+            archived_iters = (
+                channel.archived_threads(limit=None, private=False),
+                channel.archived_threads(limit=None, private=True, joined=False),
+            )
+
+        for archived in archived_iters:
             try:
                 async for thread in archived:
                     if thread.id not in seen:
