@@ -1,0 +1,52 @@
+# ── Secrets & Environment ─────────────────────────────────────────
+.env
+*.env
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Virtual Environments ──────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Runtime State (deny by default) ───────────────────────────────
+# databases/ holds live member data: user IDs, usernames, ban reasons,
+# moderation records. Git history is permanent, so ignore EVERYTHING here and
+# allow back only the two files that are safe to publish. An extension list
+# would miss a .sqlite, .csv or .jsonl export dropped in later.
+databases/*
+!databases/.gitkeep
+!databases/debate_image_map.json
+
+# Channel exports: message text, authors, timestamps, attachments.
+archives/*
+!archives/.gitkeep
+
+# Local database backups and dumps.
+backups/
+
+# ── Editor / Machine-Local ────────────────────────────────────────
+.vscode/
+.idea/
+.claude/settings.local.json
+
+# ── OS-Generated ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Scratch ───────────────────────────────────────────────────────
+scratch/

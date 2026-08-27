@@ -1,0 +1,48 @@
+[project]
+name = "19embed"
+version = "2.0.0"
+description = "19 Bot — moderation and utility bot for The Submission Server"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", "backups", "databases", "resources"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "ASYNC",
+    "S",    # bandit
+    "C4",
+    "SIM",
+    "RUF",
+]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "B008",    # discord.py decorators legitimately call in defaults
+    "S101",    # assert is fine in tests
+    "RUF001",  # emoji and symbols in user-facing strings are deliberate
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S311"]
+# Shelling out to git is the whole point of this script.
+"scripts/preflight_public.py" = ["S603", "S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+markers = [
+    "unit: fast tests with no I/O",
+    "integration: tests that touch a temporary SQLite file",
+]
+
+[tool.coverage.run]
+source = ["core", "cogs"]
+omit = ["*/__pycache__/*"]

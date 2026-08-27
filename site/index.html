@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Policies — 19 Bot</title>
+<meta name="description" content="Policies for the 19 Bot Discord application.">
+<meta name="robots" content="index, follow">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1c1e21;
+  --muted: #5b6168;
+  --rule: #e3e6ea;
+  --accent: #3d5afe;
+  --code-bg: #f4f6f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --fg: #e6e8ea;
+    --muted: #9aa2ab;
+    --rule: #2c3036;
+    --accent: #8fa2ff;
+    --code-bg: #1f2228;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+nav {
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.5rem;
+  padding-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: baseline;
+}
+nav .brand { font-weight: 700; letter-spacing: -0.01em; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover, nav a:focus { color: var(--accent); text-decoration: underline; }
+h1 { font-size: 1.9rem; line-height: 1.25; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
+h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; letter-spacing: -0.01em; }
+h3 { font-size: 1.05rem; margin: 2rem 0 0.5rem; }
+p, ul, ol { margin: 0 0 1rem; }
+li { margin-bottom: 0.35rem; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
+code {
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg);
+  padding: 0.9rem 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+blockquote {
+  margin: 0 0 1rem;
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid var(--rule);
+  color: var(--muted);
+}
+.table-scroll { overflow-x: auto; margin: 0 0 1.25rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.94rem; }
+th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--rule); }
+th { font-weight: 600; }
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><span class="brand">19 Bot</span>
+<strong>Home</strong>
+<a href="terms.html">Terms</a>
+<a href="privacy.html">Privacy</a></nav>
+<h1>19 Bot</h1>
+<p>19 Bot is a moderation and utility application for Discord, operated for
+The Submission Server. These are its policy documents.</p>
+<div class="table-scroll"><table><thead><tr><th>Document</th><th>What it covers</th></tr></thead><tbody>
+<tr><td><a href="terms.html">Terms of Service</a></td><td>The terms you agree to by adding or using the bot</td></tr>
+<tr><td><a href="privacy.html">Privacy Policy</a></td><td>Exactly what data is stored, for how long, and how to have it deleted</td></tr>
+</tbody></table></div>
+<h2>Requesting your data</h2>
+<p>You may request a copy of your data, or its deletion, at any time and free of
+charge by emailing
+jonathan [at] wikisubmission [dot] org.
+Include your Discord user ID. Requests are actioned within 30 days.</p>
+
+<footer>
+<p>19 Bot — a moderation and utility Discord application.
+Contact: jonathan [at] wikisubmission [dot] org</p>
+</footer>
+</div>
+</body>
+</html>

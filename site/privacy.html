@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — 19 Bot</title>
+<meta name="description" content="Privacy Policy for the 19 Bot Discord application.">
+<meta name="robots" content="index, follow">
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1c1e21;
+  --muted: #5b6168;
+  --rule: #e3e6ea;
+  --accent: #3d5afe;
+  --code-bg: #f4f6f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --fg: #e6e8ea;
+    --muted: #9aa2ab;
+    --rule: #2c3036;
+    --accent: #8fa2ff;
+    --code-bg: #1f2228;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+nav {
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 2.5rem;
+  padding-bottom: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: baseline;
+}
+nav .brand { font-weight: 700; letter-spacing: -0.01em; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a:hover, nav a:focus { color: var(--accent); text-decoration: underline; }
+h1 { font-size: 1.9rem; line-height: 1.25; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
+h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; letter-spacing: -0.01em; }
+h3 { font-size: 1.05rem; margin: 2rem 0 0.5rem; }
+p, ul, ol { margin: 0 0 1rem; }
+li { margin-bottom: 0.35rem; }
+a { color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
+code {
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre {
+  background: var(--code-bg);
+  padding: 0.9rem 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+pre code { background: none; padding: 0; }
+blockquote {
+  margin: 0 0 1rem;
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid var(--rule);
+  color: var(--muted);
+}
+.table-scroll { overflow-x: auto; margin: 0 0 1.25rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.94rem; }
+th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--rule); }
+th { font-weight: 600; }
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><span class="brand">19 Bot</span>
+<a href="index.html">Home</a>
+<a href="terms.html">Terms</a>
+<strong>Privacy</strong></nav>
+<h1>Privacy Policy — 19 Bot</h1>
+<p><strong>Last updated:</strong> 27 August 2026<br>
+<strong>Applies to:</strong> the 19 Bot Discord application (&quot;the Bot&quot;)<br>
+<strong>Contact:</strong> jonathan [at] wikisubmission [dot] org</p>
+<p>19 Bot is a moderation and utility bot operated for a single Discord community, The Submission Server. This policy describes exactly what the Bot stores, why, how long it is kept, and how to have it deleted.</p>
+<hr>
+<h2>1. Who is responsible</h2>
+<p>The Bot is operated by its developer team, reachable at jonathan [at] wikisubmission [dot] org. There is no company, no third-party processor, and no analytics provider involved.</p>
+<h2>2. What the Bot stores</h2>
+<p>The Bot stores data in a single SQLite database on the operator&#x27;s own machine. It does not use a hosted database, a cloud service, or any third-party API for storage.</p>
+<div class="table-scroll"><table><thead><tr><th>Data</th><th>Why it is stored</th><th>Where</th></tr></thead><tbody><tr><td>Discord user ID, username, display name</td><td>To identify who a moderation record applies to</td><td><code>suspicious_accounts</code></td></tr><tr><td>Account creation date, server join date</td><td>To detect throwaway accounts created shortly before joining</td><td><code>suspicious_accounts</code></td></tr><tr><td>Timeout reason, the moderator who applied it, the date</td><td>To keep an auto-renewing timeout in force and let staff review it</td><td><code>perpetual_timeouts</code></td></tr><tr><td>Discord user ID and a reason</td><td>To re-apply a ban if a removed user rejoins</td><td><code>after_ban_users</code></td></tr><tr><td>Discord user ID and an expiry timestamp</td><td>To remove the New Member role after 24 hours</td><td><code>new_member_roles</code></td></tr><tr><td>Event title, description, voice channel, organiser ID, image URL</td><td>To store live events that staff create</td><td><code>custom_live_events</code></td></tr><tr><td>Bot application IDs</td><td>The list of bots allowed to join</td><td><code>whitelist</code></td></tr><tr><td>Last-seen article URL per RSS feed</td><td>So the same article is not announced twice</td><td><code>blog_state</code></td></tr></tbody></table></div>
+<h3>Data the Bot reads but does not store</h3>
+<p>The Bot reads the text of messages in channels it can see, in order to block links posted by members still inside the new-member period. <strong>Message content read for this purpose is never written to disk.</strong> It is examined in memory and discarded. Deleted messages are not logged or retained.</p>
+<h3>Historical voice-channel data</h3>
+<p>An earlier version of the Bot recorded voice channel joins. That feature has been removed and nothing writes to the table any more. The historical records remain in the operator&#x27;s local database as an archive and are not used by any command. They will be deleted on request, or when the operator drops the table.</p>
+<h2>3. Channel archiving</h2>
+<p>The Bot provides an <code>/archive</code> command that saves the full history of a specified channel to the operator&#x27;s local disk, including message text, authors, timestamps, and attached files.</p>
+<p><strong>This is important, so it is stated plainly:</strong></p>
+<ul><li>The command can <strong>only</strong> be run by the single account that owns the application. It cannot be used by server administrators, moderators, or any other member, and it is hidden from everyone else in the Discord client.</li><li>It only reads channels the Bot has already been granted access to by the server&#x27;s own permission settings. It cannot read private channels the Bot cannot see.</li><li>Archives are written to local disk on the operator&#x27;s machine. They are never uploaded, transmitted to a third party, published, sold, or shared.</li><li>Every archive run is logged, and the fact that a channel was archived is recorded in the <code>archive_runs</code> table.</li><li>Archives are retained only as long as the operator needs them and are deleted on request.</li></ul>
+<p>If you are a member of a server where this Bot is installed and you object to your messages being included in such an archive, contact the operator at the address above and your messages will be removed from any existing archive.</p>
+<h2>4. What the Bot does NOT do</h2>
+<ul><li>It does not sell, rent, licence, or transfer your data to anyone.</li><li>It does not share data with any third party, advertiser, or analytics service.</li><li>It does not use your data to train machine learning models.</li><li>It does not track you across servers, or collect data from servers other than the one it is configured for.</li><li>It does not store message content for the link-blocking feature.</li><li>It does not read or store direct messages between users.</li><li>It does not collect payment information, email addresses, IP addresses, or any data outside Discord.</li></ul>
+<h2>5. Retention</h2>
+<div class="table-scroll"><table><thead><tr><th>Data</th><th>Retention</th></tr></thead><tbody><tr><td>New Member role records</td><td>Deleted automatically once the role expires (24 hours)</td></tr><tr><td>After-ban entries</td><td>Deleted automatically once the ban is applied</td></tr><tr><td>Perpetual timeout records</td><td>Kept until a moderator removes the timeout</td></tr><tr><td>Suspicious account flags</td><td>Kept while the moderation record remains relevant; deleted on request</td></tr><tr><td>Live events</td><td>Kept until deactivated by staff; deleted on request</td></tr><tr><td>RSS feed state</td><td>Overwritten continuously; contains no personal data</td></tr><tr><td>Channel archives</td><td>Kept only as long as needed by the operator; deleted on request</td></tr><tr><td>Logs</td><td>Rotated automatically, keeping at most 5 files of 5 MB each</td></tr></tbody></table></div>
+<h2>6. Your rights</h2>
+<p>You may request, at any time and free of charge:</p>
+<ul><li><strong>Access</strong> — a copy of the data the Bot holds about you.</li><li><strong>Correction</strong> — correction of inaccurate data.</li><li><strong>Deletion</strong> — erasure of your data, including removal from any channel archive.</li><li><strong>Objection</strong> — that the Bot stop processing your data, which in practice means removing your records and, if you wish, the Bot leaving your server.</li></ul>
+<p>To exercise any of these, email <strong>jonathan [at] wikisubmission [dot] org</strong> from an address you control, or contact the operator directly on Discord, including your Discord user ID. Requests are actioned within 30 days.</p>
+<p>Note that moderation records exist to keep a community safe. A deletion request that would erase an active ban or timeout record may be declined for as long as that enforcement action is in force. You will be told if that is the case and why. Everything else will be deleted.</p>
+<h2>7. Security</h2>
+<ul><li>The database and any archives are stored on the operator&#x27;s own machine, not on a public server.</li><li>Credentials are held in environment variables, never in source control.</li><li>Access is limited to the application&#x27;s developer team, all of whom are required by Discord to use two-factor authentication.</li></ul>
+<h2>8. Children</h2>
+<p>Discord requires users to be at least 13, or older where local law requires. The Bot is not directed at children and does not knowingly collect data from anyone below Discord&#x27;s minimum age. If such data has been collected, contact the operator and it will be deleted.</p>
+<h2>9. Changes</h2>
+<p>Material changes to this policy will be announced in the server the Bot serves, and the &quot;Last updated&quot; date above will change. The current version is always available at the URL configured in the Discord Developer Portal.</p>
+<h2>10. Discord</h2>
+<p>The Bot operates inside Discord and is subject to Discord&#x27;s own <a href="https://discord.com/privacy">Privacy Policy</a> and <a href="https://discord.com/terms">Terms of Service</a>. Data you provide to Discord itself is governed by those documents, not this one.</p>
+<footer>
+<p>19 Bot — a moderation and utility Discord application.
+Contact: jonathan [at] wikisubmission [dot] org</p>
+</footer>
+</div>
+</body>
+</html>

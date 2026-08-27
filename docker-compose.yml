@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    image: 19embed:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./databases:/app/databases
+      - ./logs:/app/logs
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

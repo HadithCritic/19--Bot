@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Legal site is in step with the markdown
+        run: python scripts/build_legal_site.py --check
+
+      - name: Tests
+        run: pytest --cov=core --cov=cogs --cov-report=term-missing
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail if a .env or database file is tracked
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|\.db$'; then
+            echo "::error::Secrets or database files are tracked in git"
+            exit 1
+          fi
+          echo "No tracked secrets or database files"

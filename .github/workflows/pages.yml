@@ -1,0 +1,58 @@
+name: Publish legal site
+
+# Serves the Terms of Service and Privacy Policy as public pages, which Discord
+# app verification requires. Discord's validator rejects any URL it cannot
+# fetch, so these must be reachable without authentication.
+#
+# GitHub Pages on the free plan only serves PUBLIC repositories. If this repo
+# stays private, use one of the alternatives in docs/VERIFICATION.md instead.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/TERMS_OF_SERVICE.md"
+      - "docs/PRIVACY_POLICY.md"
+      - "scripts/build_legal_site.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Rebuild rather than trusting the committed output.
+      - name: Build the site from the markdown
+        run: python scripts/build_legal_site.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
