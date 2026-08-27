@@ -1,7 +1,7 @@
 {
   "venvPath": ".",
   "venv": ".venv",
-  "pythonVersion": "3.11",
+  "pythonVersion": "3.13",
   "typeCheckingMode": "basic",
   "include": ["core", "cogs", "main.py", "tests"],
   "exclude": [".venv", "backups", "databases", "resources"],

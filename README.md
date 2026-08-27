@@ -75,9 +75,36 @@ python main.py
 docker compose up -d --build
 ```
 
-`databases/`, `logs/`, and `archives/` are volume-mounted so state survives
-restarts. The container runs as an unprivileged user and reports health from log
-freshness.
+The image builds for both linux/amd64 and linux/arm64, so the same Dockerfile
+works on an Intel server, an Apple Silicon Mac and a Raspberry Pi.
+
+| Aspect | Behaviour |
+|---|---|
+| User | Unprivileged `botuser`, never root |
+| Persistence | `databases/`, `logs/` and `archives/` are all bind-mounted |
+| Health | From the heartbeat the bot writes every 60 seconds, tolerance 180 |
+| Shutdown | `init: true` plus SIGTERM handling, so the database closes cleanly |
+| Python | Read from `.python-version` via a build arg |
+
+Check status with:
+
+```bash
+docker compose ps
+```
+
+The container reports `healthy` once the bot's event loop has written
+`logs/heartbeat`. That file is the liveness signal rather than log freshness: a
+quiet bot legitimately writes no logs for hours, which previously reported
+unhealthy and could drive a restart loop.
+
+**macOS and Linux, with auto-restart:**
+
+```bash
+./start_bot.sh
+```
+
+Same exit-code contract as `start_bot.bat`: code 2 is a configuration failure
+and stops rather than looping.
 
 ---
 
@@ -377,7 +404,19 @@ Dependencies are pinned exactly in `requirements.txt` and `requirements-dev.txt`
 including ruff. An unpinned linter means CI can fail on rules that do not exist
 in the version installed locally.
 
-191 tests, none of which need a Discord connection. Coverage is concentrated on
+### Uniformity across machines
+
+One Python version, declared once in `.python-version` and read by everything
+else: the Dockerfile build arg, the compose build arg, `requires-python`, ruff's
+`target-version`, Pyright, and both workflows. `tests/test_deployment.py`
+asserts they still agree, so they cannot drift.
+
+`.gitattributes` normalises line endings to LF on checkout, with `.bat` files
+kept as CRLF because cmd.exe requires it. Without that, a file committed from
+Windows carries CRLF and a shell script fails inside the Linux container with
+"bad interpreter".
+
+231 tests, none of which need a Discord connection. Coverage is concentrated on
 the logic where a regression is most costly: configuration validation, database
 migrations against realistic legacy schemas, permission resolution, the
 member-join ordering, feed diffing and backoff, and archive path safety.
@@ -460,6 +499,7 @@ reachable history for anything sensitive. Exit code 0 means safe. See
 │   ├── debate.py             # /debate diagram picker
 │   └── archive.py            # Owner-only channel export
 │
+├── .python-version           # The single source of the supported Python version
 ├── docs/                     # Terms, privacy policy, verification checklist
 ├── site/                     # Generated public policy pages (GitHub Pages)
 ├── scripts/

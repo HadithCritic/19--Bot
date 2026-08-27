@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
+import math
+import signal
 import sys
+from pathlib import Path
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +31,10 @@ from core.errors import UserFacingError, respond_error  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 
 logger = logging.getLogger("bot")
+
+# How often the liveness file is refreshed. The container healthcheck
+# tolerates three times this before reporting unhealthy.
+_HEARTBEAT_SECONDS = 60
 
 EXTENSIONS = (
     "cogs.security",
@@ -57,6 +65,7 @@ class SubmissionBot(commands.Bot):
             allowed_mentions=discord.AllowedMentions.none(),
         )
         self.db = Database(CONFIG.database_path)
+        self._heartbeat_path = Path(CONFIG.log_dir) / "heartbeat"
 
     async def setup_hook(self) -> None:
         await self.db.connect()
@@ -74,6 +83,7 @@ class SubmissionBot(commands.Bot):
 
         self.tree.on_error = self.on_tree_error
         await self._sync_commands()
+        self.heartbeat.start()
 
     def _command_fingerprint(self, guild: discord.Object | None) -> str:
         """Hash the command payloads that would be uploaded."""
@@ -131,9 +141,38 @@ class SubmissionBot(commands.Bot):
             )
 
     async def close(self) -> None:
+        self.heartbeat.cancel()
         await super().close()
         await self.db.close()
         logger.info("Database connection closed")
+
+    @tasks.loop(seconds=_HEARTBEAT_SECONDS)
+    async def heartbeat(self) -> None:
+        """Touch a file so a container healthcheck can see the loop is alive.
+
+        Log freshness is not a liveness signal: a quiet bot legitimately writes
+        no logs for hours. This goes stale only if the event loop stops running.
+        """
+        try:
+            self._heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+            # latency is NaN until the first gateway heartbeat lands, and
+            # "nans" in a health file reads as a bug.
+            latency = self.latency
+            latency_text = f"{latency * 1000:.0f}ms" if math.isfinite(latency) else "unknown"
+            self._heartbeat_path.write_text(
+                f"{discord.utils.utcnow().isoformat()} latency={latency_text}\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("Could not write the heartbeat file: %s", exc)
+
+    @heartbeat.before_loop
+    async def _heartbeat_ready(self) -> None:
+        await self.wait_until_ready()
+
+    @heartbeat.error
+    async def _heartbeat_error(self, error: BaseException) -> None:
+        logger.exception("Heartbeat task failed", exc_info=error)
 
     async def on_ready(self) -> None:
         logger.info("Logged in as %s (%s)", self.user, getattr(self.user, "id", "?"))
@@ -188,6 +227,31 @@ class SubmissionBot(commands.Bot):
         await respond_error(interaction, "An unexpected error occurred. Staff have been notified.")
 
 
+def _install_shutdown_handlers(bot: SubmissionBot) -> None:
+    """Close the bot cleanly on SIGTERM as well as Ctrl-C.
+
+    `docker stop` sends SIGTERM, whose default action ends the process at once,
+    skipping the shutdown path that closes the database. Signal handlers are not
+    available on the Windows event loop, which is why this is best-effort.
+    """
+    loop = asyncio.get_running_loop()
+    # Held so the shutdown task is not garbage collected before it completes.
+    pending: set[asyncio.Task] = set()
+
+    def request_shutdown(signal_name: str) -> None:
+        logger.info("Received %s, shutting down", signal_name)
+        task = loop.create_task(bot.close())
+        pending.add(task)
+        task.add_done_callback(pending.discard)
+
+    for name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        with contextlib.suppress(NotImplementedError, RuntimeError, ValueError):
+            loop.add_signal_handler(sig, request_shutdown, name)
+
+
 async def main() -> int:
     setup_logging(log_dir=CONFIG.log_dir, level=CONFIG.log_level)
 
@@ -198,6 +262,7 @@ async def main() -> int:
         return 2
 
     bot = SubmissionBot()
+    _install_shutdown_handlers(bot)
     try:
         # start() rather than run() so logging is already configured and the
         # process exits with a status code instead of waiting on stdin.

@@ -2,11 +2,11 @@
 name = "19embed"
 version = "2.0.0"
 description = "19 Bot — moderation and utility bot for The Submission Server"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 exclude = [".venv", "backups", "databases", "resources"]
 
 [tool.ruff.lint]

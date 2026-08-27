@@ -32,18 +32,36 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
 
       # Rebuild rather than trusting the committed output.
       - name: Build the site from the markdown
         run: python scripts/build_legal_site.py
 
+      # configure-pages cannot enable Pages itself here. Its `enablement: true`
+      # option calls the Create Pages Site API, which the default GITHUB_TOKEN
+      # is not permitted to use ("Resource not accessible by integration"), so
+      # Pages has to be switched on once by hand. This step turns that cryptic
+      # API error into instructions.
+      - name: Check that Pages is enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "Pages is enabled."
+          else
+            echo "::error title=GitHub Pages is not enabled::Enable it once, then re-run this workflow."
+            echo ""
+            echo "  Settings -> Pages -> Build and deployment -> Source: GitHub Actions"
+            echo "  https://github.com/${{ github.repository }}/settings/pages"
+            echo ""
+            echo "This is a one-time manual step. The default GITHUB_TOKEN cannot"
+            echo "create a Pages site, so no workflow change can replace it."
+            exit 1
+          fi
+
       - name: Configure Pages
         uses: actions/configure-pages@v6
-        with:
-          # Turns Pages on if it is not already enabled, instead of failing with
-          # "Get Pages site failed". Needs the pages: write permission above.
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v5
         with:

@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
           cache: pip
 
       - name: Install dependencies
@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version-file: .python-version
 
       # The same script used before publishing, rather than a separate ad-hoc
       # grep that could drift from it. Covers tracked paths, file contents, and

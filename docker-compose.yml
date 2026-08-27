@@ -1,14 +1,36 @@
 services:
   bot:
-    build: .
-    image: 19embed:latest
+    build:
+      context: .
+      args:
+        # Keep in step with .python-version.
+        PYTHON_VERSION: "3.13"
+    image: 19bot:latest
+    container_name: 19bot
     restart: unless-stopped
+
     env_file:
       - .env
+
+    # init gives the container a real PID 1 that forwards SIGTERM, so `docker
+    # stop` reaches the bot's shutdown path and the database closes cleanly
+    # instead of the process being killed outright.
+    init: true
+
+    environment:
+      # The bot formats times in EST via zoneinfo regardless, but matching the
+      # container clock keeps log timestamps readable.
+      TZ: ${TZ:-America/New_York}
+
     volumes:
+      # All three are state the bot writes. archives/ was previously missing,
+      # so every channel export was lost when the container was recreated.
       - ./databases:/app/databases
       - ./logs:/app/logs
-    stop_grace_period: 20s
+      - ./archives:/app/archives
+
+    stop_grace_period: 30s
+
     logging:
       driver: json-file
       options:

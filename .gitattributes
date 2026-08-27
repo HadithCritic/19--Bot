@@ -1,0 +1,21 @@
+# Normalise line endings so a checkout is byte-identical on Windows, macOS and
+# Linux. Without this, files committed from Windows carry CRLF and shell scripts
+# fail inside the Linux container with "bad interpreter".
+* text=auto eol=lf
+
+# Windows-only launcher: must keep CRLF or cmd.exe misparses it.
+*.bat text eol=crlf
+
+# Never touched by line-ending conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.db binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Keep generated output out of diff noise while still reviewable.
+site/*.html linguist-generated=true
