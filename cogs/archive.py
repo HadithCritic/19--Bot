@@ -122,6 +122,7 @@ class ArchiveStats:
     attachment_bytes: int = 0
     channels_done: int = 0
     channels_total: int = 1
+    current_channel_name: str | None = None
     errors: list[str] = field(default_factory=list)
     last_message_id: int | None = None
 
@@ -142,13 +143,40 @@ class ChannelArchiver:
         include_attachments: bool,
         max_attachment_bytes: int,
         stats: ArchiveStats,
+        is_server_archive: bool = False,
     ) -> None:
         self._destination = destination
         self._session = session
         self._include_attachments = include_attachments
         self._max_attachment_bytes = max_attachment_bytes
         self._stats = stats
+        self._is_server_archive = is_server_archive
         self._semaphore = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
+
+    def _target_folder(self, channel: discord.abc.Messageable) -> Path:
+        label = getattr(channel, "name", "channel")
+        channel_id = getattr(channel, "id", 0)
+        if self._is_server_archive:
+            if isinstance(channel, discord.Thread):
+                parent = channel.parent
+                parent_cat = getattr(parent, "category", None) if parent else None
+                cat_name = safe_name(parent_cat.name) if parent_cat else "uncategorized"
+                parent_name = safe_name(getattr(parent, "name", "parent"))
+                return (
+                    self._destination
+                    / cat_name
+                    / parent_name
+                    / "threads"
+                    / f"{safe_name(str(label))}-{channel_id}"
+                )
+
+            cat = getattr(channel, "category", None)
+            cat_name = safe_name(cat.name) if cat else "uncategorized"
+            return self._destination / cat_name / f"{safe_name(str(label))}-{channel_id}"
+        else:
+            if isinstance(channel, discord.Thread):
+                return self._destination / "threads" / f"{safe_name(str(label))}-{channel_id}"
+            return self._destination / safe_name(str(label))
 
     async def run(
         self,
@@ -157,8 +185,7 @@ class ChannelArchiver:
         after_id: int | None,
         on_progress,
     ) -> None:
-        label = getattr(channel, "name", "channel")
-        folder = self._destination / safe_name(str(label))
+        folder = self._target_folder(channel)
         folder.mkdir(parents=True, exist_ok=True)
         attachments_dir = folder / "attachments"
 
@@ -258,7 +285,7 @@ class Archive(commands.Cog):
             await self._session.close()
             self._session = None
 
-    # --- Command ---
+    # --- Commands ---
 
     @app_commands.command(
         name="archive",
@@ -324,7 +351,63 @@ class Archive(commands.Cog):
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-    # --- Job ---
+    @app_commands.command(
+        name="archive_server",
+        description="Save the entire server's channels and threads to disk (bot owner only).",
+    )
+    @app_commands.describe(
+        include_attachments="Download images and files as well as text. Default: yes.",
+        include_threads="Also archive threads inside each channel. Default: yes.",
+        restart="Ignore previous runs and archive from the beginning. Default: no.",
+    )
+    @app_commands.guild_only()
+    @owner_only()
+    async def archive_server(
+        self,
+        interaction: discord.Interaction,
+        include_attachments: bool = True,
+        include_threads: bool = True,
+        restart: bool = False,
+    ) -> None:
+        assert interaction.guild is not None
+        guild = interaction.guild
+
+        if guild.id in self._running:
+            await respond_error(interaction, f"**{guild.name}** is already being archived.")
+            return
+
+        if guild.me is None:
+            await respond_error(interaction, "I cannot resolve my own member object in this server.")
+            return
+
+        dm_message = await self._open_progress_dm(interaction.user, guild)
+        if dm_message is None:
+            await respond_error(
+                interaction,
+                "I cannot DM you, so I have nowhere to report progress. "
+                "Enable direct messages from server members and try again.",
+            )
+            return
+
+        await respond(
+            interaction,
+            f"📦 Archiving entire server **{guild.name}**. Progress will arrive in your DMs.",
+        )
+
+        task = asyncio.create_task(
+            self._run_server_job(
+                guild,
+                dm_message,
+                include_attachments=include_attachments,
+                include_threads=include_threads,
+                restart=restart,
+            ),
+            name=f"archive-server-{guild.id}",
+        )
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    # --- Jobs ---
 
     async def _run_job(
         self,
@@ -361,11 +444,13 @@ class Archive(commands.Cog):
                 include_attachments=include_attachments,
                 max_attachment_bytes=CONFIG.archive_attachment_max_mb * 1_048_576,
                 stats=stats,
+                is_server_archive=False,
             )
             reporter = _ProgressReporter(dm_message, channel, stats, started)
             await reporter.update(force=True)
 
             for sub_target in targets:
+                stats.current_channel_name = getattr(sub_target, "name", str(sub_target.id))
                 # Resume only applies to the root channel; threads are archived
                 # in full because their own progress is not tracked separately.
                 sub_after = after_id if sub_target.id == channel.id else None
@@ -380,6 +465,7 @@ class Archive(commands.Cog):
                 stats.channels_done += 1
                 await reporter.update(force=True)
 
+            stats.current_channel_name = None
             await self._write_manifest(destination, channel, stats, started)
             await self._record_finish(channel.id, stats, status="complete")
             await reporter.finish(destination)
@@ -409,9 +495,98 @@ class Archive(commands.Cog):
         finally:
             self._running.discard(channel.id)
 
+    async def _run_server_job(
+        self,
+        guild: discord.Guild,
+        dm_message: discord.Message,
+        *,
+        include_attachments: bool,
+        include_threads: bool,
+        restart: bool,
+    ) -> None:
+        self._running.add(guild.id)
+        stats = ArchiveStats()
+        started = discord.utils.utcnow()
+        destination = (
+            Path(CONFIG.archive_dir)
+            / safe_name(str(guild.id))
+            / f"server-{safe_name(guild.name)}-{guild.id}"
+        )
+
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            await self._record_start(guild, started)
+
+            targets = await self._collect_server_targets(guild, include_threads)
+            stats.channels_total = len(targets)
+
+            if self._session is None:
+                raise RuntimeError("HTTP session unavailable")
+
+            archiver = ChannelArchiver(
+                destination=destination,
+                session=self._session,
+                include_attachments=include_attachments,
+                max_attachment_bytes=CONFIG.archive_attachment_max_mb * 1_048_576,
+                stats=stats,
+                is_server_archive=True,
+            )
+            reporter = _ProgressReporter(dm_message, guild, stats, started)
+            await reporter.update(force=True)
+
+            for sub_target in targets:
+                stats.current_channel_name = getattr(sub_target, "name", str(sub_target.id))
+                sub_after = None if restart else await self._resume_point(sub_target.id)
+                channel_started = discord.utils.utcnow()
+                try:
+                    await self._record_start(sub_target, channel_started)
+                    await archiver.run(sub_target, after_id=sub_after, on_progress=reporter.update)
+                    await self._record_finish(sub_target.id, stats, status="complete")
+                except discord.Forbidden:
+                    stats.note_error(f"no access to {getattr(sub_target, 'name', '?')}")
+                    logger.warning("Lost access to %s during server archive", sub_target.id)
+                    await self._record_finish(sub_target.id, stats, status="forbidden")
+                except discord.HTTPException as exc:
+                    stats.note_error(f"{getattr(sub_target, 'name', '?')}: {exc}")
+                    logger.error("HTTP error archiving %s: %s", sub_target.id, exc)
+                    await self._record_finish(sub_target.id, stats, status="failed")
+                stats.channels_done += 1
+                await reporter.update(force=True)
+
+            stats.current_channel_name = None
+            await self._write_manifest(destination, guild, stats, started)
+            await self._record_finish(guild.id, stats, status="complete")
+            await reporter.finish(destination)
+            logger.info(
+                "Archived server %s: %d messages, %d attachments across %d channels",
+                guild.name,
+                stats.messages,
+                stats.attachments_saved,
+                stats.channels_done,
+            )
+
+        except asyncio.CancelledError:
+            await self._record_finish(guild.id, stats, status="cancelled")
+            with contextlib.suppress(discord.HTTPException):
+                await dm_message.reply(
+                    f"⚠️ Archive of server **{guild.name}** was cancelled after "
+                    f"{stats.messages:,} messages. Re-run `/archive_server` to resume."
+                )
+            raise
+        except Exception as exc:
+            logger.exception("Archive of server %s failed", guild.id)
+            await self._record_finish(guild.id, stats, status="failed")
+            with contextlib.suppress(discord.HTTPException):
+                await dm_message.reply(
+                    f"❌ Archive of server **{guild.name}** failed after "
+                    f"{stats.messages:,} messages.\n```{type(exc).__name__}: {exc}```"
+                )
+        finally:
+            self._running.discard(guild.id)
+
     async def _collect_targets(
         self,
-        channel: discord.TextChannel | discord.ForumChannel | discord.Thread,
+        channel: discord.TextChannel | discord.ForumChannel | discord.VoiceChannel | discord.StageChannel | discord.Thread,
         include_threads: bool,
     ) -> list[discord.abc.Messageable]:
         """The channel itself, plus its threads when asked.
@@ -427,34 +602,82 @@ class Archive(commands.Cog):
             return targets or [channel]
 
         seen = {getattr(item, "id", 0) for item in targets}
-        for thread in channel.threads:  # active, from the gateway cache
+        for thread in getattr(channel, "threads", []):  # active, from the gateway cache
             if thread.id not in seen:
                 targets.append(thread)
                 seen.add(thread.id)
 
         # Archived threads are not cached and must be paged from the API.
-        if isinstance(channel, discord.ForumChannel):
-            archived_iters = (channel.archived_threads(limit=None),)
-        else:
-            archived_iters = (
-                channel.archived_threads(limit=None, private=False),
-                channel.archived_threads(limit=None, private=True, joined=False),
-            )
+        if hasattr(channel, "archived_threads"):
+            if isinstance(channel, discord.ForumChannel):
+                archived_iters = (channel.archived_threads(limit=None),)
+            else:
+                archived_iters = (
+                    channel.archived_threads(limit=None, private=False),
+                    channel.archived_threads(limit=None, private=True, joined=False),
+                )
 
-        for archived in archived_iters:
-            try:
-                async for thread in archived:
-                    if thread.id not in seen:
-                        targets.append(thread)
-                        seen.add(thread.id)
-            except discord.Forbidden:
-                # Listing private archived threads needs Manage Threads.
-                logger.info("Cannot list some archived threads in %s", channel.id)
-            except discord.HTTPException as exc:
-                logger.warning("Failed listing archived threads in %s: %s", channel.id, exc)
+            for archived in archived_iters:
+                try:
+                    async for thread in archived:
+                        if thread.id not in seen:
+                            targets.append(thread)
+                            seen.add(thread.id)
+                except discord.Forbidden:
+                    # Listing private archived threads needs Manage Threads.
+                    logger.info("Cannot list some archived threads in %s", channel.id)
+                except discord.HTTPException as exc:
+                    logger.warning("Failed listing archived threads in %s: %s", channel.id, exc)
 
         logger.info("Archive target %s expanded to %d channel(s)", channel.id, len(targets))
         return targets
+
+    async def _collect_server_targets(
+        self,
+        guild: discord.Guild,
+        include_threads: bool,
+    ) -> list[discord.abc.Messageable]:
+        """Collect all readable channels and threads in the server in category order."""
+        me = guild.me
+        if me is None:
+            return []
+
+        channels = [
+            ch
+            for ch in guild.channels
+            if isinstance(
+                ch,
+                (
+                    discord.TextChannel,
+                    discord.ForumChannel,
+                    discord.VoiceChannel,
+                    discord.StageChannel,
+                ),
+            )
+        ]
+        channels.sort(
+            key=lambda c: (
+                c.category.position if getattr(c, "category", None) is not None else -1,
+                getattr(c, "position", 0),
+            )
+        )
+
+        all_targets: list[discord.abc.Messageable] = []
+        for ch in channels:
+            perms = ch.permissions_for(me)
+            if not perms.view_channel or (not perms.read_message_history and not isinstance(ch, discord.ForumChannel)):
+                logger.info("Skipping %s (%s): missing read permissions", ch.name, ch.id)
+                continue
+            ch_targets = await self._collect_targets(ch, include_threads)
+            all_targets.extend(ch_targets)
+
+        logger.info(
+            "Server %s (%s) expanded to %d channel/thread target(s)",
+            guild.name,
+            guild.id,
+            len(all_targets),
+        )
+        return all_targets
 
     # --- Persistence ---
 
@@ -464,7 +687,8 @@ class Archive(commands.Cog):
         )
         return row["last_message_id"] if row else None
 
-    async def _record_start(self, channel, started: datetime) -> None:
+    async def _record_start(self, target, started: datetime) -> None:
+        guild_id = target.id if isinstance(target, discord.Guild) else target.guild.id
         await self.db.execute(
             """INSERT INTO archive_runs
                    (channel_id, guild_id, channel_name, started_at, status)
@@ -474,7 +698,7 @@ class Archive(commands.Cog):
                    started_at   = excluded.started_at,
                    completed_at = NULL,
                    status       = 'running'""",
-            (channel.id, channel.guild.id, channel.name, started.isoformat()),
+            (target.id, guild_id, target.name, started.isoformat()),
         )
 
     async def _record_finish(self, channel_id: int, stats: ArchiveStats, *, status: str) -> None:
@@ -497,11 +721,26 @@ class Archive(commands.Cog):
         )
 
     async def _write_manifest(
-        self, destination: Path, channel, stats: ArchiveStats, started: datetime
+        self,
+        destination: Path,
+        target: discord.abc.Messageable | discord.Guild,
+        stats: ArchiveStats,
+        started: datetime,
     ) -> None:
+        if isinstance(target, discord.Guild):
+            guild_info = {"id": target.id, "name": target.name}
+            channel_info = {"id": target.id, "name": target.name, "type": "Guild"}
+        else:
+            guild_info = {"id": target.guild.id, "name": target.guild.name}
+            channel_info = {
+                "id": target.id,
+                "name": target.name,
+                "type": str(getattr(target, "type", "Channel")),
+            }
+
         manifest = {
-            "guild": {"id": channel.guild.id, "name": channel.guild.name},
-            "channel": {"id": channel.id, "name": channel.name, "type": str(channel.type)},
+            "guild": guild_info,
+            "channel": channel_info,
             "started_at": started.isoformat(),
             "completed_at": discord.utils.utcnow().isoformat(),
             "messages": stats.messages,
@@ -543,11 +782,13 @@ class Archive(commands.Cog):
         return None
 
     async def _open_progress_dm(
-        self, user: discord.User | discord.Member, channel
+        self, user: discord.User | discord.Member, target: discord.abc.Messageable | discord.Guild
     ) -> discord.Message | None:
+        is_server = isinstance(target, discord.Guild)
+        target_name = f"server **{target.name}**" if is_server else f"**#{getattr(target, 'name', 'channel')}**"
         embed = discord.Embed(
             title="📦 Archive queued",
-            description=f"Preparing to archive **#{channel.name}**...",
+            description=f"Preparing to archive {target_name}...",
             color=discord.Color.blurple(),
             timestamp=discord.utils.utcnow(),
         )
@@ -569,12 +810,12 @@ class _ProgressReporter:
     def __init__(
         self,
         message: discord.Message,
-        channel,
+        target: discord.abc.Messageable | discord.Guild,
         stats: ArchiveStats,
         started: datetime,
     ) -> None:
         self._message = message
-        self._channel = channel
+        self._target = target
         self._stats = stats
         self._started = started
         self._last_edit = 0.0
@@ -599,8 +840,9 @@ class _ProgressReporter:
             await self._message.edit(embed=embed)
         with contextlib.suppress(discord.HTTPException):
             # A separate message so the completion actually pings the DM.
+            name_str = f"server **{self._target.name}**" if isinstance(self._target, discord.Guild) else f"**#{getattr(self._target, 'name', 'channel')}**"
             await self._message.reply(
-                f"✅ Archive of **#{self._channel.name}** complete: "
+                f"✅ Archive of {name_str} complete: "
                 f"{self._stats.messages:,} messages, "
                 f"{self._stats.attachments_saved:,} attachments."
             )
@@ -609,9 +851,19 @@ class _ProgressReporter:
         elapsed = (discord.utils.utcnow() - self._started).total_seconds()
         rate = self._stats.messages / elapsed if elapsed > 0 else 0.0
 
+        is_server = isinstance(self._target, discord.Guild)
+        if is_server:
+            title = "✅ Server Archive complete" if done else "📦 Archiving Server..."
+            desc = f"Server **{self._target.name}**"
+        else:
+            guild_obj = getattr(self._target, "guild", None)
+            guild_name = guild_obj.name if guild_obj else ""
+            title = "✅ Archive complete" if done else "📦 Archiving..."
+            desc = f"**#{getattr(self._target, 'name', 'channel')}** in {guild_name}"
+
         embed = discord.Embed(
-            title="✅ Archive complete" if done else "📦 Archiving...",
-            description=f"**#{self._channel.name}** in {self._channel.guild.name}",
+            title=title,
+            description=desc,
             color=discord.Color.green() if done else discord.Color.blurple(),
             timestamp=discord.utils.utcnow(),
         )
@@ -634,9 +886,10 @@ class _ProgressReporter:
             inline=True,
         )
         if self._stats.channels_total > 1:
+            cur = f" ({self._stats.current_channel_name})" if self._stats.current_channel_name else ""
             embed.add_field(
                 name="Channels",
-                value=f"{self._stats.channels_done}/{self._stats.channels_total}",
+                value=f"{self._stats.channels_done}/{self._stats.channels_total}{cur}",
                 inline=True,
             )
         embed.add_field(name="Elapsed", value=_format_duration(elapsed), inline=True)

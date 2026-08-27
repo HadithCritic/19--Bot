@@ -206,3 +206,44 @@ async def test_a_guild_administrator_is_not_the_owner():
     )
     with pytest.raises(NotOwnerError):
         await predicate(admin)
+
+
+# --- Folder layout ---
+
+
+def test_single_channel_target_folder():
+    from cogs.archive import ChannelArchiver
+    import discord
+
+    dest = Path("archives/123/general-456")
+    archiver = ChannelArchiver(
+        destination=dest,
+        session=None,  # type: ignore[arg-type]
+        include_attachments=False,
+        max_attachment_bytes=100,
+        stats=ArchiveStats(),
+        is_server_archive=False,
+    )
+
+    channel = SimpleNamespace(name="general", id=456)
+    assert archiver._target_folder(channel) == dest / "general"  # type: ignore[arg-type]
+
+
+def test_server_archive_target_folders():
+    from cogs.archive import ChannelArchiver
+    import discord
+
+    dest = Path("archives/123/server-myserver-123")
+    archiver = ChannelArchiver(
+        destination=dest,
+        session=None,  # type: ignore[arg-type]
+        include_attachments=False,
+        max_attachment_bytes=100,
+        stats=ArchiveStats(),
+        is_server_archive=True,
+    )
+
+    cat = SimpleNamespace(name="General Category")
+    channel = SimpleNamespace(name="welcome", id=789, category=cat)
+    assert archiver._target_folder(channel) == dest / "General_Category" / "welcome-789"  # type: ignore[arg-type]
+
